@@ -24,11 +24,16 @@ models/weights/
 *.shp
 *.geojson
 
-# Model weights
+# Model weights — stored in GCP bucket, not GitHub
+models/weights/
+models/segformer/
+models/deeplabv3/
+models/efficientnet/
 *.pt
 *.pth
 *.onnx
 *.pkl
+*.bin
 
 # MLflow
 mlruns/
@@ -49,3 +54,11 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# GCP credentials — never commit these
+gcp-credentials.json
+service-account*.json
+*.key.json
+
+# DVC cache — data lives in GCP bucket
+.dvc/cache/
