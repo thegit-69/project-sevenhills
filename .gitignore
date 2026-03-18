@@ -62,3 +62,4 @@ service-account*.json
 
 # DVC cache — data lives in GCP bucket
 .dvc/cache/
+/girl.png
