@@ -1,0 +1,4 @@
+[core]
+    remote = gcp_backend
+['remote "gcp_backend"']
+    url = gs://project-7hills
