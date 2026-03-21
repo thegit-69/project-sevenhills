@@ -68,7 +68,7 @@ LAYERS = [
     ("Road_Centre_Line.shp",  2, 3.0),
     ("Water_Body.shp",        3, None),
     ("Water_Body_Line.shp",   3, 4.0),
-    ("Waterbody_Point.shp",   3, 5.0),
+    ("Waterbody_Point.shp",   3, 8.0),
     ("Utility_Poly.shp",      4, None),
     ("Built_Up_Area_type.shp",1, None),  # burns last = highest priority
 ]
