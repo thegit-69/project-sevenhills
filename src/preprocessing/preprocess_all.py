@@ -316,6 +316,15 @@ def process_village(vcfg: dict, all_manifests: dict) -> None:
     # ── Setup output dirs ─────────────────────────────────────────────────
     img_dir  = Path(OUTPUT_DIR) / split / name / "img"
     mask_dir = Path(OUTPUT_DIR) / split / name / "mask"
+    # Delete existing incomplete tiles first
+    if img_dir.exists():
+        existing = list(img_dir.glob("*.tif"))
+        log.info(f"Deleting {len(existing)} incomplete tiles...")
+        for f in existing:
+            f.unlink()
+    if mask_dir.exists():
+        for f in mask_dir.glob("*.tif"):
+            f.unlink()
     img_dir.mkdir(parents=True, exist_ok=True)
     mask_dir.mkdir(parents=True, exist_ok=True)
 
