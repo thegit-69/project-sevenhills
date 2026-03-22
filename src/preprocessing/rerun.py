@@ -52,15 +52,6 @@ PB_SHP   = "/home/kalki/data/raw/PB/shp-file"
 VILLAGES = [
     # ── CG Training villages ──────────────────────────────────────────────
     {
-        "name":        "BADETUMNAR",
-        "state":       "CG",
-        "split":       "train",
-        "ori":         f"{CG_BASE}/BADETUMNAR_450157_BANGAPAL_450155_CHHOTETUMAR_450149_MOFALNAR_450150_ORTHO.tif",
-        "shp_dir":     CG_SHP,
-        "working_crs": "EPSG:32644",
-        "shp_prefix":  "CG",   # tells script which SHP filenames to use
-    },
-    {
         "name":        "MURDANDA",
         "state":       "CG",
         "split":       "train",
@@ -79,69 +70,12 @@ VILLAGES = [
         "shp_prefix":  "CG",
     },
     {
-        "name":        "SAMLUR",
-        "state":       "CG",
-        "split":       "train",
-        "ori":         f"{CG_BASE}/SAMLUR_450163_SIYANAR_450164_KUTULNAR_450165_BINJAM_450166_JHODIYAWADAM_450167_ORTHO.tif",
-        "shp_dir":     CG_SHP,
-        "working_crs": "EPSG:32644",
-        "shp_prefix":  "CG",
-    },
-    {
-        "name":        "KUTRU",
-        "state":       "CG",
-        "split":       "val",
-        # Use converted TIF not ECW
-        "ori":         f"{CG_BASE}/KUTRU_Converted.tif",
-        "shp_dir":     CG_SHP,
-        "working_crs": "EPSG:3857",   # matches ORI
-        "shp_prefix":  "CG",
-    },
-
-    # ── PB Training villages ──────────────────────────────────────────────
-    {
-        "name":        "NADALA",
-        "state":       "PB",
-        "split":       "train",
-        "ori":         f"{PB_BASE}/28996_NADALA_ORTHO.tif",
-        "shp_dir":     PB_SHP,
-        "working_crs": "EPSG:32643",
-        "shp_prefix":  "PB",
-    },
-    {
         "name":        "PINDORI",
         "state":       "PB",
         "split":       "train",
         "ori":         f"{PB_BASE}/PINDORI_MAYA_SINGH_TUGALWAL_28456_ortho.tif",
         "shp_dir":     PB_SHP,
         "working_crs": "EPSG:32643",
-        "shp_prefix":  "PB",
-    },
-    {
-        "name":        "TIMMOWAL",
-        "state":       "PB",
-        "split":       "train",
-        "ori":         f"{PB_BASE}/TIMMOWAL_37695_ORI.tif",
-        "shp_dir":     PB_SHP,
-        "working_crs": "EPSG:32643",
-        "shp_prefix":  "PB",
-    },
-    {
-        "name":        "FATTU",
-        "state":       "PB",
-        "split":       "train",
-        "ori":         f"{PB_BASE}/37458_fattu_bhila_ortho_3857.tif",
-        "shp_dir":     PB_SHP,
-        "working_crs": "EPSG:3857",   # matches ORI
-        "shp_prefix":  "PB",
-    },
-    {
-        "name":        "BAGGA",
-        "state":       "PB",
-        "split":       "val",
-        "ori":         f"{PB_BASE}/37774_bagga_ortho_3857.tif",
-        "shp_dir":     PB_SHP,
-        "working_crs": "EPSG:3857",   # matches ORI
         "shp_prefix":  "PB",
     },
 ]
