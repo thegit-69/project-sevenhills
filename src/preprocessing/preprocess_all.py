@@ -51,7 +51,7 @@ PB_SHP   = "/home/kalki/data/raw/PB/shp-file"
 
 VILLAGES = [
     # ── CG Training villages ──────────────────────────────────────────────
-    {
+   ''' {
         "name":        "BADETUMNAR",
         "state":       "CG",
         "split":       "train",
@@ -59,7 +59,7 @@ VILLAGES = [
         "shp_dir":     CG_SHP,
         "working_crs": "EPSG:32644",
         "shp_prefix":  "CG",   # tells script which SHP filenames to use
-    },
+    },'''
     {
         "name":        "MURDANDA",
         "state":       "CG",
@@ -78,7 +78,7 @@ VILLAGES = [
         "working_crs": "EPSG:32644",
         "shp_prefix":  "CG",
     },
-    {
+    '''{
         "name":        "SAMLUR",
         "state":       "CG",
         "split":       "train",
@@ -107,7 +107,7 @@ VILLAGES = [
         "shp_dir":     PB_SHP,
         "working_crs": "EPSG:32643",
         "shp_prefix":  "PB",
-    },
+    },'''
     {
         "name":        "PINDORI",
         "state":       "PB",
@@ -117,7 +117,7 @@ VILLAGES = [
         "working_crs": "EPSG:32643",
         "shp_prefix":  "PB",
     },
-    {
+    '''{
         "name":        "TIMMOWAL",
         "state":       "PB",
         "split":       "train",
@@ -143,7 +143,7 @@ VILLAGES = [
         "shp_dir":     PB_SHP,
         "working_crs": "EPSG:3857",   # matches ORI
         "shp_prefix":  "PB",
-    },
+    },'''
 ]
 
 # ── LAYER DEFINITIONS PER STATE ───────────────────────────────────────────────
