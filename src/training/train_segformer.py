@@ -1,12 +1,12 @@
 """
 SegFormer-b2 training — SVAMITVA feature extraction
 Classes: 0=background 1=building 2=road 3=water 4=utility
-
-Fixes applied:
-  - Removed double division bug (img/255 + A.Normalize)
+All bugs fixed:
+  - use_safetensors=True for PyTorch compatibility
+  - uint8 images for albumentations (no double division)
   - Memory-safe incremental IoU metric
-  - img kept as uint8 for albumentations
-
+  - 3-channel enforcement for HueSaturationValue
+  - Warmup + cosine scheduler
 Run: python src/training/train_segformer.py
 """
 
@@ -27,7 +27,6 @@ from albumentations.pytorch import ToTensorV2
 from tqdm import tqdm
 import mlflow
 
-# ── CONFIG ────────────────────────────────────────────────────────────────────
 CFG = {
     "model_name":    "nvidia/mit-b2",
     "num_classes":   5,
@@ -38,14 +37,11 @@ CFG = {
     "weight_decay":  0.01,
     "warmup_epochs": 5,
     "early_stop":    15,
-
-    "train_dir":  "/home/kalki/data/tiles/train",
-    "val_dir":    "/home/kalki/data/tiles/val",
-    "output_dir": "/home/kalki/models/segformer",
-
-    "class_weights":  [0.1, 2.0, 3.0, 4.0, 6.0],
-    "class_names":    ["background","building","road","water","utility"],
-
+    "train_dir":     "/home/kalki/data/tiles/train",
+    "val_dir":       "/home/kalki/data/tiles/val",
+    "output_dir":    "/home/kalki/models/segformer",
+    "class_weights": [0.1, 2.0, 3.0, 4.0, 6.0],
+    "class_names":   ["background","building","road","water","utility"],
     "mlflow_experiment": "segformer-b2-svamitva",
     "seed": 42,
 }
@@ -58,13 +54,11 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ── DATASET ───────────────────────────────────────────────────────────────────
 class TileDataset(Dataset):
-    def __init__(self, root_dir: str, transform=None):
+    def __init__(self, root_dir, transform=None):
         self.img_paths  = []
         self.mask_paths = []
         self.transform  = transform
-
         root = Path(root_dir)
         for village_dir in sorted(root.iterdir()):
             img_dir  = village_dir / "img"
@@ -76,7 +70,6 @@ class TileDataset(Dataset):
                 if mask_f.exists():
                     self.img_paths.append(img_f)
                     self.mask_paths.append(mask_f)
-
         log.info(f"Dataset {root_dir}: {len(self.img_paths)} tiles")
 
     def __len__(self):
@@ -84,21 +77,28 @@ class TileDataset(Dataset):
 
     def __getitem__(self, idx):
         with rasterio.open(self.img_paths[idx]) as src:
-            img = src.read()                     # (C, H, W)
-            img = np.transpose(img, (1, 2, 0))   # (H, W, C)
-            # Keep as uint8 — Albumentations handles normalization
-            img = img.astype(np.uint8)
+            img = src.read()                    # (C, H, W)
+            img = np.transpose(img, (1, 2, 0))  # (H, W, C)
+
+        # Force exactly 3 channels — fixes HueSaturationValue error
+        if img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=2)
+        elif img.shape[2] > 3:
+            img = img[:, :, :3]
+
+        # Keep uint8 — Albumentations A.Normalize handles /255 internally
+        img = img.astype(np.uint8)
 
         with rasterio.open(self.mask_paths[idx]) as src:
-            mask = src.read(1).astype(np.int64)  # (H, W)
+            mask = src.read(1).astype(np.int64)
 
-        # Clamp mask to valid class range
+        # Clamp mask to valid range
         mask = np.clip(mask, 0, CFG["num_classes"] - 1)
 
         if self.transform:
             aug  = self.transform(image=img, mask=mask)
-            img  = aug["image"]   # tensor (C, H, W) float
-            mask = aug["mask"]    # tensor (H, W) long
+            img  = aug["image"]
+            mask = aug["mask"]
         else:
             img  = torch.from_numpy(
                 img.transpose(2, 0, 1)
@@ -124,8 +124,6 @@ def get_transforms(train=True):
                 val_shift_limit=10, p=0.3
             ),
             A.GaussNoise(p=0.2),
-            # A.Normalize divides by 255 internally
-            # Do NOT divide by 255 manually before this
             A.Normalize(
                 mean=(0.485, 0.456, 0.406),
                 std=(0.229, 0.224, 0.225),
@@ -144,18 +142,13 @@ def get_transforms(train=True):
         ])
 
 
-# ── METRICS — memory safe ─────────────────────────────────────────────────────
 class IoUMetric:
-    """
-    Incremental IoU — updates per batch, never stores full arrays.
-    Fixes the RAM accumulation bug.
-    """
-    def __init__(self, num_classes: int = 5):
+    def __init__(self, num_classes=5):
         self.num_classes  = num_classes
         self.intersection = np.zeros(num_classes, dtype=np.float64)
         self.union        = np.zeros(num_classes, dtype=np.float64)
 
-    def update(self, preds: torch.Tensor, targets: torch.Tensor):
+    def update(self, preds, targets):
         p = preds.cpu().numpy().flatten()
         t = targets.cpu().numpy().flatten()
         for c in range(self.num_classes):
@@ -164,14 +157,14 @@ class IoUMetric:
             self.intersection[c] += np.logical_and(pc, tc).sum()
             self.union[c]        += np.logical_or(pc, tc).sum()
 
-    def get_miou(self) -> float:
+    def get_miou(self):
         ious = []
         for c in range(self.num_classes):
             if self.union[c] > 0:
                 ious.append(self.intersection[c] / self.union[c])
         return float(np.mean(ious)) if ious else 0.0
 
-    def get_per_class_iou(self) -> dict:
+    def get_per_class(self):
         result = {}
         for c in range(self.num_classes):
             if self.union[c] > 0:
@@ -183,7 +176,6 @@ class IoUMetric:
         return result
 
 
-# ── LOSS ──────────────────────────────────────────────────────────────────────
 class DiceCELoss(nn.Module):
     def __init__(self, class_weights, num_classes=5):
         super().__init__()
@@ -206,12 +198,11 @@ class DiceCELoss(nn.Module):
                0.5 * self.dice_loss(pred, target)
 
 
-# ── MODEL ─────────────────────────────────────────────────────────────────────
-def build_model(num_classes: int):
-    log.info("Loading SegFormer-b2 pretrained weights...")
+def build_model(num_classes):
+    log.info("Loading SegFormer-b2 with safetensors...")
     model = SegformerForSemanticSegmentation.from_pretrained(
         CFG["model_name"],
-        use_safetensors=True
+        use_safetensors=True,
         num_labels=num_classes,
         ignore_mismatched_sizes=True,
         id2label={str(i): n for i, n in enumerate(CFG["class_names"])},
@@ -220,7 +211,6 @@ def build_model(num_classes: int):
     return model
 
 
-# ── TRAIN ─────────────────────────────────────────────────────────────────────
 def train_one_epoch(model, loader, optimizer, criterion, device):
     model.train()
     total_loss = 0.0
@@ -237,7 +227,6 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
             mode="bilinear",
             align_corners=False,
         )
-
         loss = criterion(logits, masks)
         optimizer.zero_grad()
         loss.backward()
@@ -245,16 +234,12 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         optimizer.step()
 
         total_loss += loss.item()
-
-        # Incremental metric update — no array accumulation
         with torch.no_grad():
-            preds = logits.argmax(dim=1)
-            metric.update(preds, masks)
+            metric.update(logits.argmax(dim=1), masks)
 
     return total_loss / len(loader), metric.get_miou()
 
 
-# ── VALIDATE ──────────────────────────────────────────────────────────────────
 def validate(model, loader, criterion, device):
     model.eval()
     total_loss = 0.0
@@ -272,84 +257,41 @@ def validate(model, loader, criterion, device):
                 mode="bilinear",
                 align_corners=False,
             )
-
             loss = criterion(logits, masks)
             total_loss += loss.item()
+            metric.update(logits.argmax(dim=1), masks)
 
-            # Incremental update — no RAM accumulation
-            preds = logits.argmax(dim=1)
-            metric.update(preds, masks)
-
-    return total_loss / len(loader), metric.get_miou(), \
-           metric.get_per_class_iou()
+    return total_loss / len(loader), metric.get_miou(), metric.get_per_class()
 
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
     torch.manual_seed(CFG["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log.info(f"Device: {device} | GPU: {torch.cuda.get_device_name(0)}")
-    log.info(
-        f"VRAM: "
-        f"{torch.cuda.get_device_properties(0).total_memory/1e9:.1f} GB"
-    )
+    log.info(f"GPU: {torch.cuda.get_device_name(0)} | "
+             f"VRAM: {torch.cuda.get_device_properties(0).total_memory/1e9:.1f}GB")
 
     Path(CFG["output_dir"]).mkdir(parents=True, exist_ok=True)
 
-    # Datasets
-    train_ds = TileDataset(
-        CFG["train_dir"], get_transforms(train=True)
-    )
-    val_ds   = TileDataset(
-        CFG["val_dir"],   get_transforms(train=False)
-    )
+    train_ds = TileDataset(CFG["train_dir"], get_transforms(True))
+    val_ds   = TileDataset(CFG["val_dir"],   get_transforms(False))
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=CFG["batch_size"],
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=CFG["batch_size"],
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-    )
+    train_loader = DataLoader(train_ds, batch_size=CFG["batch_size"],
+                              shuffle=True,  num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_ds,   batch_size=CFG["batch_size"],
+                              shuffle=False, num_workers=4, pin_memory=True)
 
-    log.info(
-        f"Train: {len(train_ds)} tiles | "
-        f"Val: {len(val_ds)} tiles"
-    )
-
-    # Model, loss, optimizer
     model     = build_model(CFG["num_classes"]).to(device)
     criterion = DiceCELoss(CFG["class_weights"], CFG["num_classes"])
-    optimizer = AdamW(
-        model.parameters(),
-        lr=CFG["lr"],
-        weight_decay=CFG["weight_decay"],
-    )
+    optimizer = AdamW(model.parameters(), lr=CFG["lr"],
+                      weight_decay=CFG["weight_decay"])
 
-    # Warmup then cosine decay
-    warmup = LinearLR(
-        optimizer,
-        start_factor=0.1,
-        end_factor=1.0,
-        total_iters=CFG["warmup_epochs"],
-    )
-    cosine = CosineAnnealingLR(
-        optimizer,
-        T_max=CFG["epochs"] - CFG["warmup_epochs"],
-        eta_min=1e-6,
-    )
-    scheduler = SequentialLR(
-        optimizer,
-        schedulers=[warmup, cosine],
-        milestones=[CFG["warmup_epochs"]],
-    )
+    warmup = LinearLR(optimizer, start_factor=0.1,
+                      end_factor=1.0, total_iters=CFG["warmup_epochs"])
+    cosine = CosineAnnealingLR(optimizer,
+                               T_max=CFG["epochs"] - CFG["warmup_epochs"],
+                               eta_min=1e-6)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine],
+                             milestones=[CFG["warmup_epochs"]])
 
     best_miou  = 0.0
     no_improve = 0
@@ -363,71 +305,52 @@ def main():
         for epoch in range(1, CFG["epochs"] + 1):
             t0 = time.time()
 
-            tr_loss, tr_miou = train_one_epoch(
-                model, train_loader, optimizer, criterion, device
-            )
-            va_loss, va_miou, va_cls = validate(
-                model, val_loader, criterion, device
-            )
+            tr_loss, tr_miou             = train_one_epoch(
+                model, train_loader, optimizer, criterion, device)
+            va_loss, va_miou, va_cls     = validate(
+                model, val_loader, criterion, device)
             scheduler.step()
-            elapsed = time.time() - t0
 
             log.info(
                 f"Epoch {epoch:3d}/{CFG['epochs']} | "
                 f"Train loss={tr_loss:.4f} mIoU={tr_miou:.4f} | "
                 f"Val loss={va_loss:.4f} mIoU={va_miou:.4f} | "
                 f"LR={scheduler.get_last_lr()[0]:.2e} | "
-                f"{elapsed:.0f}s"
+                f"{time.time()-t0:.0f}s"
             )
-
-            # Per-class IoU
-            for cls_name, iou in va_cls.items():
+            for cls, iou in va_cls.items():
                 if iou is not None:
-                    log.info(f"  {cls_name:12s}: IoU={iou:.4f}")
+                    log.info(f"  {cls:12s}: IoU={iou:.4f}")
 
             mlflow.log_metrics({
-                "train_loss": tr_loss,
-                "train_miou": tr_miou,
-                "val_loss":   va_loss,
-                "val_miou":   va_miou,
-                "lr":         scheduler.get_last_lr()[0],
+                "train_loss": tr_loss, "train_miou": tr_miou,
+                "val_loss": va_loss,   "val_miou":   va_miou,
+                "lr": scheduler.get_last_lr()[0],
             }, step=epoch)
-
-            for cls_name, iou in va_cls.items():
+            for cls, iou in va_cls.items():
                 if iou is not None:
-                    mlflow.log_metric(
-                        f"val_iou_{cls_name}", iou, step=epoch
-                    )
+                    mlflow.log_metric(f"val_iou_{cls}", iou, step=epoch)
 
             if va_miou > best_miou:
                 best_miou  = va_miou
                 no_improve = 0
                 torch.save({
-                    "epoch":       epoch,
-                    "model_state": model.state_dict(),
-                    "optimizer":   optimizer.state_dict(),
-                    "val_miou":    va_miou,
-                    "val_cls":     va_cls,
-                    "cfg":         CFG,
+                    "epoch": epoch, "model_state": model.state_dict(),
+                    "val_miou": va_miou, "val_cls": va_cls, "cfg": CFG,
                 }, best_path)
                 log.info(f"  ✓ Best mIoU: {best_miou:.4f} → saved")
                 mlflow.log_metric("best_val_miou", best_miou, step=epoch)
             else:
                 no_improve += 1
-                log.info(
-                    f"  No improvement "
-                    f"({no_improve}/{CFG['early_stop']})"
-                )
+                log.info(f"  No improvement ({no_improve}/{CFG['early_stop']})")
 
             if no_improve >= CFG["early_stop"]:
                 log.info(f"Early stopping at epoch {epoch}")
                 break
 
-        log.info(f"\nBest val mIoU: {best_miou:.4f}")
-        log.info(f"Saved: {best_path}")
+        log.info(f"Best val mIoU: {best_miou:.4f} | Saved: {best_path}")
         mlflow.log_artifact(str(best_path))
 
 
 if __name__ == "__main__":
     main()
-
