@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 import rasterio
 import timm
 import albumentations as A
@@ -28,29 +28,26 @@ CFG = {
     "num_classes":   4,
     "image_size":    224,
     "batch_size":    64,
-    "epochs":        50,
-    "lr":            1e-3,
+    "epochs":        60,
+    "lr":            3e-4,        # reduced from 1e-3
     "weight_decay":  1e-4,
-    "early_stop":    10,
+    "early_stop":    20,          # increased from 10
+    "warmup_epochs": 5,           # add warmup
 
     "train_dir":  "/home/kalki/data/roof_crops/train",
     "val_dir":    "/home/kalki/data/roof_crops/val",
     "output_dir": "/home/kalki/models/efficientnet",
 
-    # Inverse frequency weights from combined dataset
-    # RCC=71.2%  Tiled=1.3%  Tin=23.6%  Others=3.9%
-    "class_weights": [1.0, 54.8, 3.02, 18.26],
+    # Reduced Tiled weight — 54.8 was too aggressive
+    "class_weights": [1.0, 15.0, 3.02, 8.0],
 
     "class_names": ["RCC", "Tiled", "Tin", "Others"],
-
-    # Folder names → class indices
     "folder_to_class": {
         "1_RCC":    0,
         "2_Tiled":  1,
         "3_Tin":    2,
         "4_Others": 3,
     },
-
     "mlflow_experiment": "efficientnetv2-roof-svamitva",
     "seed": 42,
 }
@@ -364,10 +361,21 @@ def main():
         lr=CFG["lr"],
         weight_decay=CFG["weight_decay"],
     )
-    scheduler = CosineAnnealingLR(
+    warmup = LinearLR(
         optimizer,
-        T_max=CFG["epochs"],
+        start_factor=0.1,
+        end_factor=1.0,
+        total_iters=CFG["warmup_epochs"]
+    )
+    cosine = CosineAnnealingLR(
+        optimizer,
+        T_max=CFG["epochs"] - CFG["warmup_epochs"],
         eta_min=1e-6,
+    )
+    scheduler = SequentialLR(
+        optimizer,
+        schedulers=[warmup, cosine],
+        milestones=[CFG["warmup_epochs"]]
     )
 
     mlflow.set_experiment(CFG["mlflow_experiment"])
