@@ -211,6 +211,7 @@ def build_model(num_classes: int):
     log.info("Loading SegFormer-b2 pretrained weights...")
     model = SegformerForSemanticSegmentation.from_pretrained(
         CFG["model_name"],
+        use_safetensors=True
         num_labels=num_classes,
         ignore_mismatched_sizes=True,
         id2label={str(i): n for i, n in enumerate(CFG["class_names"])},
