@@ -24,7 +24,7 @@ import mlflow
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 CFG = {
-    "model_name":    "efficientnetv2_s",
+    "model_name":    "tf_efficientnetv2_s",
     "num_classes":   4,
     "image_size":    224,
     "batch_size":    64,
@@ -158,9 +158,9 @@ def get_transforms(train=True, image_size=224):
             ),
             A.GaussNoise(p=0.2),
             A.CoarseDropout(
-                max_holes=4,
-                max_height=32,
-                max_width=32, p=0.2
+                num_holes_range=(1, 4),
+                hole_height_range=(16, 32),
+                hole_width_range=(16, 32), p=0.2
             ),
             A.Normalize(
                 mean=(0.485, 0.456, 0.406),
@@ -181,14 +181,38 @@ def get_transforms(train=True, image_size=224):
 
 # ── MODEL ─────────────────────────────────────────────────────────────────────
 def build_model(num_classes: int):
-    log.info(f"Loading EfficientNetV2-S pretrained on ImageNet...")
-    model = timm.create_model(
-        CFG["model_name"],
-        pretrained=True,
-        num_classes=num_classes,
-    )
+    log.info("Loading EfficientNetV2-S...")
+    try:
+        model = timm.create_model(
+            CFG["model_name"],
+            pretrained=True,
+            num_classes=num_classes,
+        )
+        log.info("Loaded with pretrained ImageNet weights")
+    except RuntimeError:
+        log.warning(
+            "Pretrained weights unavailable — "
+            "trying tf_efficientnetv2_s..."
+        )
+        try:
+            model = timm.create_model(
+                "tf_efficientnetv2_s",
+                pretrained=True,
+                num_classes=num_classes,
+            )
+            log.info("Loaded tf_efficientnetv2_s with pretrained weights")
+        except RuntimeError:
+            log.warning(
+                "No pretrained weights found — "
+                "using random init. "
+                "Model will still train but needs more epochs."
+            )
+            model = timm.create_model(
+                CFG["model_name"],
+                pretrained=False,
+                num_classes=num_classes,
+            )
     return model
-
 
 # ── METRICS ───────────────────────────────────────────────────────────────────
 def compute_metrics(preds_all, labels_all, num_classes):
