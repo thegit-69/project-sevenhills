@@ -31,8 +31,8 @@ CFG = {
     "model_name":    "nvidia/mit-b2",
     "num_classes":   5,
     "image_size":    512,
-    "batch_size":    16,
-    "epochs":        80,
+    "batch_size":    32,
+    "epochs":        60,
     "lr":            6e-5,
     "weight_decay":  0.01,
     "warmup_epochs": 5,
@@ -275,10 +275,24 @@ def main():
     train_ds = TileDataset(CFG["train_dir"], get_transforms(True))
     val_ds   = TileDataset(CFG["val_dir"],   get_transforms(False))
 
-    train_loader = DataLoader(train_ds, batch_size=CFG["batch_size"],
-                              shuffle=True,  num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=CFG["batch_size"],
-                              shuffle=False, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(
+    train_ds,
+    batch_size=CFG["batch_size"],
+    shuffle=True,
+    num_workers=6,          # increased from 4
+    pin_memory=True,
+    persistent_workers=True, # keeps workers alive between epochs
+    prefetch_factor=2,       # prefetch next batch while GPU trains
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=CFG["batch_size"],
+        shuffle=False,
+        num_workers=6,           # increased from 4
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,
+    )
 
     model     = build_model(CFG["num_classes"]).to(device)
     criterion = DiceCELoss(CFG["class_weights"], CFG["num_classes"])
@@ -299,7 +313,7 @@ def main():
 
     mlflow.set_experiment(CFG["mlflow_experiment"])
 
-    with mlflow.start_run(run_name="segformer-b2-fixed"):
+    with mlflow.start_run(run_name="segformer-b2-fast-run"):
         mlflow.log_params(CFG)
 
         for epoch in range(1, CFG["epochs"] + 1):
