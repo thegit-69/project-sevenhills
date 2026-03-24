@@ -1,13 +1,10 @@
 """
 SegFormer-b2 training — SVAMITVA feature extraction
 Classes: 0=background 1=building 2=road 3=water 4=utility
-All bugs fixed:
-  - use_safetensors=True for PyTorch compatibility
-  - uint8 images for albumentations (no double division)
-  - Memory-safe incremental IoU metric
-  - 3-channel enforcement for HueSaturationValue
-  - Warmup + cosine scheduler
-Run: python src/training/train_segformer.py
+Optimizations:
+  - AMP (Mixed Precision) for 2x memory efficiency and speed
+  - Batch size 16 (Perfect for 24GB VRAM)
+  - num_workers=6 (Safe for 8-core CPU)
 """
 
 import logging
@@ -29,9 +26,9 @@ import mlflow
 
 CFG = {
     "model_name":    "nvidia/mit-b2",
-    "num_classes":   5,
+    "num_classes":   2,                                     # Changed from 5
     "image_size":    512,
-    "batch_size":    32,
+    "batch_size":    16,
     "epochs":        60,
     "lr":            6e-5,
     "weight_decay":  0.01,
@@ -39,10 +36,10 @@ CFG = {
     "early_stop":    15,
     "train_dir":     "/home/kalki/data/tiles/train",
     "val_dir":       "/home/kalki/data/tiles/val",
-    "output_dir":    "/home/kalki/models/segformer",
-    "class_weights": [0.1, 2.0, 3.0, 4.0, 6.0],
-    "class_names":   ["background","building","road","water","utility"],
-    "mlflow_experiment": "segformer-b2-svamitva",
+    "output_dir":    "/home/kalki/models/segformer_binary", # Changed folder name!
+    "class_weights": [0.1, 1.0],                            # Changed to binary weights
+    "class_names":   ["background", "building"],            # Changed to binary names
+    "mlflow_experiment": "segformer-b2-binary",             # New MLflow tracker
     "seed": 42,
 }
 
@@ -77,32 +74,30 @@ class TileDataset(Dataset):
 
     def __getitem__(self, idx):
         with rasterio.open(self.img_paths[idx]) as src:
-            img = src.read()                    # (C, H, W)
-            img = np.transpose(img, (1, 2, 0))  # (H, W, C)
+            img = src.read()
+            img = np.transpose(img, (1, 2, 0))
 
-        # Force exactly 3 channels — fixes HueSaturationValue error
         if img.shape[2] == 1:
             img = np.repeat(img, 3, axis=2)
         elif img.shape[2] > 3:
             img = img[:, :, :3]
 
-        # Keep uint8 — Albumentations A.Normalize handles /255 internally
         img = img.astype(np.uint8)
 
         with rasterio.open(self.mask_paths[idx]) as src:
             mask = src.read(1).astype(np.int64)
 
-        # Clamp mask to valid range
-        mask = np.clip(mask, 0, CFG["num_classes"] - 1)
+        # --- THE BINARY MAGIC ---
+        # If the pixel is 1 (building), keep it 1.
+        # If the pixel is ANYTHING ELSE (0, 2, 3, 4), make it 0 (background).
+        mask = np.where(mask == 1, 1, 0)
 
         if self.transform:
             aug  = self.transform(image=img, mask=mask)
             img  = aug["image"]
             mask = aug["mask"]
         else:
-            img  = torch.from_numpy(
-                img.transpose(2, 0, 1)
-            ).float() / 255.0
+            img  = torch.from_numpy(img.transpose(2, 0, 1)).float() / 255.0
             mask = torch.from_numpy(mask).long()
 
         return img, mask.long()
@@ -114,30 +109,15 @@ def get_transforms(train=True):
             A.RandomRotate90(p=0.5),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
-            A.RandomBrightnessContrast(
-                brightness_limit=0.2,
-                contrast_limit=0.2, p=0.4
-            ),
-            A.HueSaturationValue(
-                hue_shift_limit=10,
-                sat_shift_limit=20,
-                val_shift_limit=10, p=0.3
-            ),
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.4),
+            A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.3),
             A.GaussNoise(p=0.2),
-            A.Normalize(
-                mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225),
-                max_pixel_value=255.0,
-            ),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0),
             ToTensorV2(),
         ])
     else:
         return A.Compose([
-            A.Normalize(
-                mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225),
-                max_pixel_value=255.0,
-            ),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0),
             ToTensorV2(),
         ])
 
@@ -158,19 +138,14 @@ class IoUMetric:
             self.union[c]        += np.logical_or(pc, tc).sum()
 
     def get_miou(self):
-        ious = []
-        for c in range(self.num_classes):
-            if self.union[c] > 0:
-                ious.append(self.intersection[c] / self.union[c])
+        ious = [self.intersection[c] / self.union[c] for c in range(self.num_classes) if self.union[c] > 0]
         return float(np.mean(ious)) if ious else 0.0
 
     def get_per_class(self):
         result = {}
         for c in range(self.num_classes):
             if self.union[c] > 0:
-                result[CFG["class_names"][c]] = round(
-                    float(self.intersection[c] / self.union[c]), 4
-                )
+                result[CFG["class_names"][c]] = round(float(self.intersection[c] / self.union[c]), 4)
             else:
                 result[CFG["class_names"][c]] = None
         return result
@@ -194,8 +169,7 @@ class DiceCELoss(nn.Module):
         return total / self.nc
 
     def forward(self, pred, target):
-        return 0.5 * self.ce(pred, target) + \
-               0.5 * self.dice_loss(pred, target)
+        return 0.5 * self.ce(pred, target) + 0.5 * self.dice_loss(pred, target)
 
 
 def build_model(num_classes):
@@ -211,7 +185,7 @@ def build_model(num_classes):
     return model
 
 
-def train_one_epoch(model, loader, optimizer, criterion, device):
+def train_one_epoch(model, loader, optimizer, criterion, device, scaler):
     model.train()
     total_loss = 0.0
     metric     = IoUMetric(CFG["num_classes"])
@@ -219,19 +193,30 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     for imgs, masks in tqdm(loader, desc="  Train", leave=False):
         imgs  = imgs.to(device)
         masks = masks.to(device)
+        
+        optimizer.zero_grad(set_to_none=True) # Faster than standard zero_grad()
 
-        outputs = model(pixel_values=imgs)
-        logits  = F.interpolate(
-            outputs.logits,
-            size=masks.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-        )
-        loss = criterion(logits, masks)
-        optimizer.zero_grad()
-        loss.backward()
+        # Mixed Precision Context Manager
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+            outputs = model(pixel_values=imgs)
+            logits  = F.interpolate(
+                outputs.logits,
+                size=masks.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+            loss = criterion(logits, masks)
+            
+        # Scaled Backpropagation
+        scaler.scale(loss).backward()
+        
+        # Unscale before clipping gradients
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        
+        # Optimizer step
+        scaler.step(optimizer)
+        scaler.update()
 
         total_loss += loss.item()
         with torch.no_grad():
@@ -267,45 +252,33 @@ def validate(model, loader, criterion, device):
 def main():
     torch.manual_seed(CFG["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log.info(f"GPU: {torch.cuda.get_device_name(0)} | "
-             f"VRAM: {torch.cuda.get_device_properties(0).total_memory/1e9:.1f}GB")
+    log.info(f"GPU: {torch.cuda.get_device_name(0)} | VRAM: {torch.cuda.get_device_properties(0).total_memory/1e9:.1f}GB")
 
     Path(CFG["output_dir"]).mkdir(parents=True, exist_ok=True)
 
     train_ds = TileDataset(CFG["train_dir"], get_transforms(True))
     val_ds   = TileDataset(CFG["val_dir"],   get_transforms(False))
 
+    # CPU Cores optimized for 8-core VM
     train_loader = DataLoader(
-    train_ds,
-    batch_size=CFG["batch_size"],
-    shuffle=True,
-    num_workers=6,          # increased from 4
-    pin_memory=True,
-    persistent_workers=True, # keeps workers alive between epochs
-    prefetch_factor=2,       # prefetch next batch while GPU trains
+        train_ds, batch_size=CFG["batch_size"], shuffle=True,
+        num_workers=6, pin_memory=True, persistent_workers=True, prefetch_factor=2,
     )
     val_loader = DataLoader(
-        val_ds,
-        batch_size=CFG["batch_size"],
-        shuffle=False,
-        num_workers=6,           # increased from 4
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=2,
+        val_ds, batch_size=CFG["batch_size"], shuffle=False,
+        num_workers=6, pin_memory=True, persistent_workers=True, prefetch_factor=2,
     )
 
     model     = build_model(CFG["num_classes"]).to(device)
     criterion = DiceCELoss(CFG["class_weights"], CFG["num_classes"])
-    optimizer = AdamW(model.parameters(), lr=CFG["lr"],
-                      weight_decay=CFG["weight_decay"])
+    optimizer = AdamW(model.parameters(), lr=CFG["lr"], weight_decay=CFG["weight_decay"])
 
-    warmup = LinearLR(optimizer, start_factor=0.1,
-                      end_factor=1.0, total_iters=CFG["warmup_epochs"])
-    cosine = CosineAnnealingLR(optimizer,
-                               T_max=CFG["epochs"] - CFG["warmup_epochs"],
-                               eta_min=1e-6)
-    scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine],
-                             milestones=[CFG["warmup_epochs"]])
+    # Initialize the AMP GradScaler
+    scaler = torch.amp.GradScaler('cuda')
+
+    warmup = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=CFG["warmup_epochs"])
+    cosine = CosineAnnealingLR(optimizer, T_max=CFG["epochs"] - CFG["warmup_epochs"], eta_min=1e-6)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[CFG["warmup_epochs"]])
 
     best_miou  = 0.0
     no_improve = 0
@@ -313,16 +286,16 @@ def main():
 
     mlflow.set_experiment(CFG["mlflow_experiment"])
 
-    with mlflow.start_run(run_name="segformer-b2-fast-run"):
+    with mlflow.start_run(run_name="segformer-b2-amp-run"):
         mlflow.log_params(CFG)
 
         for epoch in range(1, CFG["epochs"] + 1):
             t0 = time.time()
 
-            tr_loss, tr_miou             = train_one_epoch(
-                model, train_loader, optimizer, criterion, device)
-            va_loss, va_miou, va_cls     = validate(
-                model, val_loader, criterion, device)
+            # Pass the scaler into the training loop
+            tr_loss, tr_miou = train_one_epoch(model, train_loader, optimizer, criterion, device, scaler)
+            va_loss, va_miou, va_cls = validate(model, val_loader, criterion, device)
+            
             scheduler.step()
 
             log.info(
@@ -341,6 +314,7 @@ def main():
                 "val_loss": va_loss,   "val_miou":   va_miou,
                 "lr": scheduler.get_last_lr()[0],
             }, step=epoch)
+            
             for cls, iou in va_cls.items():
                 if iou is not None:
                     mlflow.log_metric(f"val_iou_{cls}", iou, step=epoch)
