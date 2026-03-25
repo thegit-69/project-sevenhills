@@ -197,8 +197,8 @@ def predict_full_image_segformer(
     strip_h     = CFG["strip_height"]
 
     # Accumulate softmax probabilities with Gaussian weighting
-    prob_sum    = np.zeros((2, full_h, full_w), dtype=np.float32)
-    weight_sum  = np.zeros((full_h, full_w),    dtype=np.float32)
+    prob_sum    = np.zeros((2, full_h, full_w), dtype=np.float16)
+    weight_sum  = np.zeros((full_h, full_w),    dtype=np.float16)
 
     # Gaussian weight map — center pixels get higher weight
     cy, cx     = tile_size // 2, tile_size // 2
@@ -206,7 +206,7 @@ def predict_full_image_segformer(
     sigma      = tile_size * 0.25
     gauss      = np.exp(
         -((y_idx - cy)**2 + (x_idx - cx)**2) / (2 * sigma**2)
-    ).astype(np.float32)
+    ).astype(np.float16)
 
     strip_bounds = list(range(0, full_h, strip_h))
     if strip_bounds[-1] < full_h:
@@ -305,15 +305,15 @@ def predict_full_image_deeplabv3(
     stride     = CFG["stride"]
     strip_h    = CFG["strip_height"]
 
-    prob_sum   = np.zeros((4, full_h, full_w), dtype=np.float32)
-    weight_sum = np.zeros((full_h, full_w),    dtype=np.float32)
+    prob_sum   = np.zeros((4, full_h, full_w), dtype=np.float16)
+    weight_sum = np.zeros((full_h, full_w),    dtype=np.float16)
 
     cy, cx     = tile_size // 2, tile_size // 2
     y_idx, x_idx = np.mgrid[:tile_size, :tile_size]
     sigma      = tile_size * 0.25
     gauss      = np.exp(
         -((y_idx - cy)**2 + (x_idx - cx)**2) / (2 * sigma**2)
-    ).astype(np.float32)
+    ).astype(np.float16)
 
     strip_bounds = list(range(0, full_h, strip_h))
     if strip_bounds[-1] < full_h:
