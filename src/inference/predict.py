@@ -52,10 +52,52 @@ CFG = {
 }
 
 # ── TEST VILLAGES ─────────────────────────────────────────────────────────────
+# Removed first village as it was already trained.
+# Added remaining 9 villages data.
 TEST_VILLAGES = [
     {
-        "name":        "DIWANA_BARNALA",
-        "ori_path":    "/home/kalki/data/raw/test/PB/live_demo_2/DIWANA_BARNALA_40082_ORTHO/DIWANA_BARNALA_40082_ORTHO.tif",
+        "name":        "ANAITPURA_FATEHGARH",
+        "ori_path":    "/home/kalki/data/raw/test/PB/live_demo_2/ANAITPURA_FATEHGARH_SAHIB_32705_ORTHO/ANAITPURA_FATEHGARH_SAHIB_32705_ORTHO.tif",
+        "working_crs": "EPSG:32643",
+    },
+    {
+        "name":        "BUTTER_SIVIYA_AMRITSAR",
+        "ori_path":    "/home/kalki/data/raw/test/PB/live_demo_3/BUTTER_SIVIYA_AMRITSAR_37780_ORTHO/BUTTAR_SIVIYA_AMRITSAR_37810_ORTHO.tif",
+        "working_crs": "EPSG:32643",
+    },
+    {
+        "name":        "BADRA_BARNALA",
+        "ori_path":    "/home/kalki/data/raw/test/PB/live_demo_3/BADRA_BARNALA_40044_ORTHO/BADRA_BARNALA_40044_ORTHO.tif",
+        "working_crs": "EPSG:32643",
+    },
+    {
+        "name":        "KARTARPUR_AMRITSAR",
+        "ori_path":    "/home/kalki/data/raw/test/PB/live_demo_3/KARTARPUR_AMRITSAR_37842_ORTHO/KARTARPUR_AMRITSAR_37842_ORTHO.tif",
+        "working_crs": "EPSG:32643",
+    },
+    {
+        "name":        "PARAGAON",
+        "ori_path":    "/home/kalki/data/raw/test/CG/CG_Live_Demo_1/PARAGAON_444686_ORTHO.tif",
+        "working_crs": "EPSG:32644",
+    },
+    {
+        "name":        "BAGAI_JHARIYA",
+        "ori_path":    "/home/kalki/data/raw/test/CG/CG_Live_Demo_1/BAGAI_JHARIYA_434310_ORTHO.tif",
+        "working_crs": "EPSG:32644",
+    },
+    {
+        "name":        "CHANABHATA",
+        "ori_path":    "/home/kalki/data/raw/test/CG/CG_Live_Demo_2/CHANABHATA_445476_Ortho.tif",
+        "working_crs": "EPSG:4326",
+    },
+    {
+        "name":        "GUDBHELI",
+        "ori_path":    "/home/kalki/data/raw/test/CG/CG_Live_Demo_3/GUDBHELI_445483_Ortho.tif",
+        "working_crs": "EPSG:4326",
+    },
+    {
+        "name":        "BASANTPUR",
+        "ori_path":    "/home/kalki/data/raw/test/CG/CG_Live_Demo_3/BASANTPUR_434297_ORTHO.tif",
         "working_crs": "EPSG:32644",
     },
 ]
