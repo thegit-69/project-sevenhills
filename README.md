@@ -1,5 +1,5 @@
-# Seven Hills 🛰️
-### Deep Learning Pipeline for Automated Village Feature Extraction from Drone Orthophotos
+# Project - Seven Hills 🛰️
+### A Scalable Multi-Stage Deep Learning Pipeline for Automated Geospatial Feature Extraction from Drone Orthophotos 
 
 > Submission for **PS-1: Automated Feature Extraction from SVAMITVA Drone Orthophotos**  
 > AI/ML Hackathon — Ministry of Panchayati Raj · Powered by Geo-Intel Lab, IITTNiF
@@ -8,7 +8,7 @@
 
 ## Overview
 
-The [SVAMITVA scheme](https://svamitva.nic.in/) generates high-resolution drone orthophotos (3.5 cm/px) for millions of rural villages across India. Manually digitizing building footprints, roads, water bodies, and utility structures from these images is too slow and inconsistent to scale to 6.62 lakh villages.
+The [SVAMITVA scheme](https://svamitva.nic.in/) generates high-resolution drone orthophotos (3.5 cm/px) for lakhs of rural villages across India. Right now as the MoPR minister said that they have 3.5 lakh villages othrophotos.Manually digitizing building footprints, roads, water bodies, and utility structures from these images is too slow and inconsistent to scale to 6.62 lakh villages.
 
 **Seven Hills** is a three-stage deep learning inference pipeline that takes a raw drone orthophoto as input and produces a fully attributed, OGC-compliant **GeoPackage** with four named feature layers — no manual GIS work required between input and output.
 
