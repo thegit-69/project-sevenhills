@@ -16,6 +16,25 @@ Trained across two geographically distinct states (Punjab and Chhattisgarh), the
 
 ---
 
+---
+
+## Impact
+
+The system shifts GIS workflows from manual digitization to model-assisted validation, where analysts focus on correcting edge cases such as merged buildings and misclassified features rather than drawing all geometries from scratch.
+
+| Metric | Value |
+|---|---|
+| Target villages (SVAMITVA scheme) | 6.62 lakh |
+| Manual digitization time per village | 2–4 hours (active analyst effort) |
+| Seven Hills processing time per village | 45–90 minutes (automated, analyst review less effort) |
+| Human effort reduction | ~70–80% (manual digitization replaced by model-assisted validation)|
+| Throughput improvement (per GPU) | ~4–6× more villages/day vs manual analyst |
+| Scalable throughput (multi-GPU) | 100+ villages/day with modest cluster |
+| Test villages completed | 10 (2,738 buildings extracted) |
+| Data sovereignty | All processing within GCP Mumbai (asia-south1) |
+
+---
+
 ## Pipeline Architecture
 
 ```
@@ -155,8 +174,8 @@ Raw Orthophoto (.tif)
 ### Installation
 
 ```bash
-git clone https://github.com/thegit-69/geoai-project.git
-cd cd geoai-project
+git clone https://github.com/thegit-69/project-sevenhills.git
+cd project-sevenhills
 pip install -r requirements_gpu.txt
 ```
 
@@ -196,6 +215,7 @@ MLflow experiment logs are included in the repository for full reproducibility.
 - **Tiled roof F1 (0.633)** reflects limited training samples (190 crops). States like Kerala or Karnataka with more tiled roofing will benefit from additional data.
 - **Sequential GPU processing** — the pipeline handles one village at a time. Multi-GPU parallelism would reduce wall-clock time for large deployments.
 - **Infrastructure IoU (0.40–0.45)** is sufficient for broad feature mapping but not for legal property boundary delineation — Survey of India manual review remains necessary for official records.
+- Occasional merging of adjacent buildings into single polygons and misclassification of visually similar regions (e.g., crop fields as water bodies), which are corrected during a lightweight human validation stage.
 
 ---
 
@@ -207,25 +227,12 @@ MLflow experiment logs are included in the repository for full reproducibility.
 - **IITTNiF** — Academic support, compute access, geospatial AI expertise
 - **State Revenue Departments (Punjab, Chhattisgarh)** — Ground-level validation and pilot feedback
 
----
 
-## Impact
-
-| Metric | Value |
-|---|---|
-| Target villages (SVAMITVA scheme) | 6.62 lakh |
-| Manual digitization time per village | 2–4 hours (experienced analyst) |
-| Seven Hills processing time per village | 45–90 minutes (single GPU, no analyst) |
-| Speed improvement | **20–30× faster than manual** |
-| Test villages completed | 10 (2,738 buildings extracted) |
-| Data sovereignty | All processing within GCP Mumbai (asia-south1) |
-
----
 
 ## Team KALKI
 
-**[C Dasarath], [V Rohan], [B Charan Kumar] & [N Tharun]**  
-[SIMATS Engineering]  
+**C Dasarath, V Rohan, B Charan Kumar & N Tharun Sai**  
+SIMATS Engineering
 
 ---
 
